@@ -1,12 +1,62 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { api } from '../../services/api';
+import VideoCard from '../../components/VideoCard';
 
 export default function ProfilePage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const [videos, setVideos] = useState<any[]>([]);
+  const [videosLoading, setVideosLoading] = useState(true);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+
+  useEffect(() => {
+    if (!user?._id) return;
+    let cancelled = false;
+    setVideosLoading(true);
+    api('/videos?limit=100&skip=0')
+      .then((res) => {
+        if (cancelled) return;
+        const all = res?.data?.videos ?? [];
+        const mine = all.filter((v: any) => {
+          const ownerId = v?.owner?._id || v?.owner || v?.uploader?._id || v?.uploader;
+          return String(ownerId) === String(user._id);
+        });
+        setVideos(mine);
+      })
+      .catch(() => {
+        if (!cancelled) setVideos([]);
+      })
+      .finally(() => {
+        if (!cancelled) setVideosLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?._id]);
+
+  useEffect(() => {
+    if (!user?._id) return;
+    let cancelled = false;
+    Promise.all([api(`/users/${user._id}/followers`), api(`/users/${user._id}/following`)])
+      .then(([followers, following]) => {
+        if (cancelled) return;
+        setFollowersCount(Array.isArray(followers) ? followers.length : 0);
+        setFollowingCount(Array.isArray(following) ? following.length : 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFollowersCount(0);
+        setFollowingCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?._id]);
 
   if (loading) {
     return (
@@ -47,46 +97,25 @@ export default function ProfilePage() {
         filter: 'blur(40px)', pointerEvents: 'none',
       }} />
 
-      {/* Navbar */}
-      <nav style={{
-        padding: '1rem 2rem', borderBottom: '1px solid rgba(255,255,255,0.05)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        backgroundColor: 'rgba(13,13,13,0.95)', backdropFilter: 'blur(20px)',
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <Link href="/" style={{ textDecoration: 'none' }}>
-          <span style={{
-            fontFamily: "'Syne', sans-serif", fontWeight: '800', fontSize: '1.2rem',
-            background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>ClipSphere</span>
-        </Link>
-        <button
-          onClick={logout}
-          style={{
-            padding: '0.5rem 1.25rem', borderRadius: '100px',
-            border: '1px solid rgba(236,72,153,0.4)',
-            background: 'transparent', color: '#ec4899',
-            cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600',
-            fontFamily: "'DM Sans', sans-serif",
-            transition: 'all 0.3s ease',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget.style.background = 'rgba(236,72,153,0.1)');
-            (e.currentTarget.style.boxShadow = '0 0 15px rgba(236,72,153,0.3)');
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget.style.background = 'transparent');
-            (e.currentTarget.style.boxShadow = 'none');
-          }}
-        >
-          Logout
-        </button>
-      </nav>
-
       {/* Profile content */}
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '3rem 1.5rem' }}>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mb-4 text-sm font-medium text-zinc-400 hover:text-white bg-transparent border border-zinc-700 rounded-lg px-3 py-1.5 transition-colors"
+        >
+          ← Back
+        </button>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+          <button
+            type="button"
+            onClick={logout}
+            className="text-sm font-semibold text-zinc-200 border border-zinc-600 rounded-lg px-4 py-2 hover:bg-zinc-800 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
 
         {/* Cover area */}
         <div style={{
@@ -124,6 +153,9 @@ export default function ProfilePage() {
               {user.username}
             </h1>
             <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>{user.email}</p>
+            <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+              Followers: {followersCount} · Following: {followingCount}
+            </p>
           </div>
         </div>
 
@@ -168,7 +200,7 @@ export default function ProfilePage() {
           }}>
             <p style={{ color: '#6b7280', fontSize: '0.75rem', fontWeight: '600', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>NOTIFICATIONS</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              {Object.entries(user.notificationPreferences).map(([key, val]) => (
+              {Object.entries(user.notificationPreferences ?? {}).map(([key, val]) => (
                 <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>{key}</span>
                   <span style={{
@@ -181,21 +213,33 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Edit profile button */}
-        <button style={{
-          padding: '0.75rem 2rem', borderRadius: '100px',
-          background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
-          border: 'none', color: 'white', cursor: 'pointer',
-          fontSize: '0.875rem', fontWeight: '700',
-          fontFamily: "'Syne', sans-serif",
-          transition: 'all 0.3s ease',
-          boxShadow: '0 0 20px rgba(139,92,246,0.3)',
-        }}
-          onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 30px rgba(139,92,246,0.6)')}
-          onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 20px rgba(139,92,246,0.3)')}
+        {/* Edit profile — not wired to API */}
+        <button
+          type="button"
+          className="px-8 py-3 rounded-lg text-sm font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-colors"
         >
           Edit Profile
         </button>
+
+        <div style={{ marginTop: '2rem' }}>
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: '700', fontSize: '1.25rem', marginBottom: '1rem' }}>
+            Uploaded videos
+          </h2>
+
+          {videosLoading && <p style={{ color: '#6b7280' }}>Loading videos...</p>}
+
+          {!videosLoading && videos.length === 0 && (
+            <p style={{ color: '#6b7280' }}>No uploaded videos yet.</p>
+          )}
+
+          {!videosLoading && videos.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-8">
+              {videos.map((video) => (
+                <VideoCard key={video._id} video={video} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

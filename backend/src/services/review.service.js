@@ -1,12 +1,13 @@
 import Review from '../models/review.model.js';
 import Video from '../models/video.model.js';
+import User from '../models/user.model.js';
 import ApiError from '../utils/ApiError.js';
+import { sendEngagementEmail } from './email.service.js';
+import { getIO } from '../socket/index.js';
 
 export const createReview = async (videoId, userId, reviewData) => {
   const video = await Video.findById(videoId);
-  if (!video) {
-    throw new ApiError(404, 'Video not found');
-  }
+  if (!video) throw new ApiError(404, 'Video not found');
 
   try {
     const review = await Review.create({
@@ -16,21 +17,53 @@ export const createReview = async (videoId, userId, reviewData) => {
       video: videoId,
     });
 
-    // Recalculate avgRating for this video
-    const allReviews = await Review.find({ video: videoId });
-    const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
+    // Trending score increment
+    await Video.findByIdAndUpdate(videoId, { $inc: { trendingScore: 5 } });
 
-    // Freshness bonus — videos less than 24hrs old get +50
-    const ageInHours = (Date.now() - new Date(video.createdAt).getTime()) / (1000 * 60 * 60);
-    const freshnessBonus = ageInHours < 24 ? 50 : 0;
+    await review.populate('user', 'username avatarUrl');
 
-    // Get current likes count
-    const likesCount = await (await import('../models/like.model.js')).default.countDocuments({ video: videoId });
+    /* ================= SOCKET NOTIFICATION ================= */
+    try {
+      const ownerId = video.owner?.toString();
 
-    // Total_Score = (Likes x 10) + (Avg_Rating x 2) + Freshness_Bonus
-    const trendingScore = (likesCount * 10) + (avgRating * 2) + freshnessBonus;
+      const actorUsername = review.user?.username;
 
-    await Video.findByIdAndUpdate(videoId, { trendingScore });
+      if (ownerId && ownerId !== userId.toString()) {
+        getIO().to(ownerId).emit('notification:review', {
+          type: 'review',
+          actorUsername: actorUsername || 'Someone',
+          videoId: video._id.toString(),
+          videoTitle: video.title,
+          preview: (reviewData.comment || '').slice(0, 80),
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (socketErr) {
+      console.error('[Socket] Failed to emit review notification:', socketErr.message);
+    }
+
+    /* ================= EMAIL (best-effort) ================= */
+    if (video.owner && video.owner.toString() !== userId.toString()) {
+      try {
+        const owner = await User.findById(video.owner).select('username email');
+        const reviewer = await User.findById(userId).select('username');
+
+        if (owner && reviewer) {
+          sendEngagementEmail(
+            owner.email,
+            owner.username,
+            reviewer.username,
+            'reviewed',
+            video.title,
+            'newReview'
+          ).catch((emailErr) => {
+            console.error('Failed to send review email:', emailErr.message);
+          });
+        }
+      } catch (emailErr) {
+        console.error('Failed to prepare review email:', emailErr.message);
+      }
+    }
 
     return review;
   } catch (error) {
@@ -39,4 +72,32 @@ export const createReview = async (videoId, userId, reviewData) => {
     }
     throw error;
   }
+};
+
+export const getReviews = async (videoId) => {
+  const video = await Video.findById(videoId);
+  if (!video) throw new ApiError(404, 'Video not found');
+
+  const reviews = await Review.find({ video: videoId })
+    .populate('user', 'username avatarUrl')
+    .sort({ createdAt: -1 });
+
+  return reviews;
+};
+
+export const deleteReview = async (reviewId, userId, userRole) => {
+  const review = await Review.findById(reviewId);
+  if (!review) throw new ApiError(404, 'Review not found');
+
+  if (review.user.toString() !== userId.toString() && userRole !== 'admin') {
+    throw new ApiError(403, 'You do not have permission to delete this review');
+  }
+
+  const videoId = review.video;
+  await review.deleteOne();
+
+  // Keep trendingScore consistent with weighted engagement (+5 per review).
+  await Video.findByIdAndUpdate(videoId, { $inc: { trendingScore: -5 } });
+
+  return { message: 'Review deleted successfully' };
 };

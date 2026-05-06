@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import VideoCard from '@/components/VideoCard';
 import { useFeed } from '@/hooks/useFeed';
+import { useAuth } from '@/hooks/useAuth';
 
 const TABS = [
   { key: 'public', label: 'All' },
@@ -55,6 +56,7 @@ function Spinner() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FeedPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('public');
   const { videos, loading, error, loadMore, hasMore } = useFeed(activeTab);
 
@@ -79,8 +81,8 @@ export default function FeedPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24">
 
         {/* ── Page header ── */}
-        <h1 className="text-3xl font-black tracking-tight mb-6">
-          <span className="text-violet-400">Clip</span>Sphere
+        <h1 className="text-3xl font-black tracking-tight mb-6 text-white">
+          <span className="text-violet-400">Discover</span> videos
         </h1>
 
         {/* ── Tabs ── */}
@@ -88,17 +90,24 @@ export default function FeedPage() {
           {TABS.map((tab) => (
             <button
               key={tab.key}
+              disabled={tab.key === 'following' && !user}
               onClick={() => setActiveTab(tab.key)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                 activeTab === tab.key
                   ? 'bg-violet-600 text-white shadow'
                   : 'text-zinc-400 hover:text-white'
-              }`}
+              } ${tab.key === 'following' && !user ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {tab.label}
             </button>
           ))}
         </div>
+
+        {!user && activeTab === 'following' && (
+          <div className="mb-6 bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-xl px-4 py-3 text-sm">
+            Following feature requires login.
+          </div>
+        )}
 
         {/* ── Error banner ── */}
         {error && (

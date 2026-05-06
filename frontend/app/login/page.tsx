@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../services/api';
+import { refreshAuth } from '../../hooks/useAuth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,10 +26,11 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify(form),
       });
-      // After login, go to profile
-      router.push('/profile');
+      await refreshAuth();
+      router.push('/feed');
+      router.refresh();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -53,6 +55,7 @@ export default function LoginPage() {
           font-family: 'DM Sans', sans-serif;
           outline: none;
           transition: all 0.3s ease;
+          box-sizing: border-box;
         }
         input:focus {
           border-color: #8b5cf6;
@@ -60,31 +63,8 @@ export default function LoginPage() {
           background: rgba(139,92,246,0.05);
         }
         input::placeholder { color: #6b7280; }
-        .submit-btn {
-          width: 100%;
-          padding: 0.875rem;
-          border-radius: 10px;
-          border: none;
-          background: linear-gradient(135deg, #8b5cf6, #ec4899);
-          color: white;
-          font-size: 1rem;
-          font-weight: 700;
-          font-family: 'Syne', sans-serif;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        .submit-btn:hover {
-          box-shadow: 0 0 30px rgba(139,92,246,0.5);
-          transform: translateY(-1px);
-        }
-        .submit-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-          transform: none;
-        }
       `}</style>
 
-      {/* Background orbs */}
       <div style={{
         position: 'fixed', top: '10%', right: '5%',
         width: '300px', height: '300px', borderRadius: '50%',
@@ -98,7 +78,6 @@ export default function LoginPage() {
         filter: 'blur(40px)', pointerEvents: 'none',
       }} />
 
-      {/* Card */}
       <div style={{
         width: '100%', maxWidth: '420px',
         background: '#1a1a1a',
@@ -108,7 +87,6 @@ export default function LoginPage() {
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         position: 'relative', zIndex: 10,
       }}>
-        {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <Link href="/" style={{ textDecoration: 'none' }}>
             <span style={{
@@ -123,7 +101,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Error message */}
         {error && (
           <div style={{
             padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.5rem',
@@ -134,10 +111,8 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-
             <div>
               <label style={{ color: '#9ca3af', fontSize: '0.8rem', fontWeight: '500', display: 'block', marginBottom: '0.4rem' }}>
                 Email
@@ -168,16 +143,20 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="submit-btn"
               disabled={loading}
-              style={{ marginTop: '0.5rem' }}
+              style={{
+                width: '100%', marginTop: '0.5rem', padding: '0.625rem',
+                borderRadius: '8px', fontSize: '0.875rem', fontWeight: '600',
+                color: 'white', background: '#7c3aed', border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.6 : 1, transition: 'background 0.2s',
+              }}
             >
               {loading ? 'Logging in...' : 'Login'}
             </button>
           </div>
         </form>
 
-        {/* Register link */}
         <p style={{ textAlign: 'center', marginTop: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
           Don&apos;t have an account?{' '}
           <Link href="/register" style={{ color: '#8b5cf6', textDecoration: 'none', fontWeight: '600' }}>
